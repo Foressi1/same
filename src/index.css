@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: #0a0a0a;
+  --color-surface: #171717;
+  --color-primary: #00ba08;
+}
+
+body {
+  background-color: var(--color-background);
+  color: #ffffff;
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+/* =========================================
+   AJUSTES PARA EL EDITOR REACT-QUILL (DARK MODE)
+   ========================================= */
+.ql-toolbar.ql-snow {
+  background-color: #171717; /* Mismo fondo de las tarjetas */
+  border-color: #27272a;
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+}
+.ql-container.ql-snow {
+  border-color: #27272a;
+  border-bottom-left-radius: 0.5rem;
+  border-bottom-right-radius: 0.5rem;
+  font-family: inherit;
+  font-size: 1rem;
+}
+.ql-editor {
+  min-height: 350px;
+  color: #e4e4e7; /* Texto claro */
+}
+/* Cambiar color de los iconos del menú a gris */
+.ql-snow .ql-stroke {
+  stroke: #a1a1aa;
+}
+.ql-snow .ql-fill,
+.ql-snow .ql-stroke.ql-fill {
+  fill: #a1a1aa;
+}
+.ql-snow .ql-picker {
+  color: #a1a1aa;
+}
+/* Al pasar el mouse, se pintan del amarillo primario */
+.ql-snow.ql-toolbar button:hover .ql-stroke,
+.ql-snow .ql-toolbar button:hover .ql-stroke {
+  stroke: #eab308;
+}
+
+/* =========================================
+   ESTILOS PARA LA LECTURA DEL PROTOCOLO
+   (Porque Tailwind resetea los tamaños por defecto)
+   ========================================= */
+.vista-protocolo h1 {
+  font-size: 2.25rem;
+  font-weight: bold;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  color: white;
+}
+.vista-protocolo h2 {
+  font-size: 1.875rem;
+  font-weight: bold;
+  margin-top: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: white;
+}
+.vista-protocolo h3 {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-top: 1.25rem;
+  margin-bottom: 0.5rem;
+  color: white;
+}
+.vista-protocolo p {
+  margin-bottom: 1rem;
+}
+.vista-protocolo ul {
+  list-style-type: disc;
+  margin-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.vista-protocolo ol {
+  list-style-type: decimal;
+  margin-left: 1.5rem;
+  margin-bottom: 1rem;
+}
+.vista-protocolo a {
+  color: #3b82f6;
+  text-decoration: underline;
+}
+.vista-protocolo img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.5rem;
+  margin: 1.5rem 0;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
+.vista-protocolo strong {
+  font-weight: bold;
+  color: #fff;
+}
