@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { supabase } from "../config/supabaseClient";
-import logoSame from "../assets/SAME1.PNG";
+import logoSame from "../assets/SAME1.png";
 import {
   LayoutDashboard,
   Users,
