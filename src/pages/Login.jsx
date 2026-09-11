@@ -12,27 +12,6 @@ export default function Login() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center">
-      {/* Navbar superior simulada */}
-      <nav className="w-full flex justify-center py-6 mt-4">
-        <div className="bg-surface px-8 py-3 rounded-2xl flex items-center gap-8 shadow-lg border border-zinc-800">
-          <div className="flex items-center gap-2 font-bold text-lg">
-            <span className="text-primary">🛡️</span>
-            <span>SAME</span>
-          </div>
-          <div className="flex gap-6 text-sm font-medium text-zinc-300">
-            <a href="#" className="hover:text-white transition-colors">
-              Nosotros
-            </a>
-            <a href="#" className="hover:text-white transition-colors">
-              Eventos
-            </a>
-            <a href="#" className="hover:text-white transition-colors">
-              Partners
-            </a>
-          </div>
-        </div>
-      </nav>
-
       {/* Botón central */}
       <div className="flex-1 flex items-center justify-center -mt-20">
         <button
