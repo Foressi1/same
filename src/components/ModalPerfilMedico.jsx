@@ -105,15 +105,28 @@ export default function ModalPerfilMedico({
 
   const handleBorrar = async () => {
     const confirmar = window.confirm(
-      `¿Estás seguro de que deseas ELIMINAR permanentemente la ficha de ${medico.nombre_dni}?`,
+      `¿Estás seguro de que deseas ELIMINAR permanentemente la ficha de ${medico.nombre_dni}? Se borrarán también todas sus horas registradas.`,
     );
     if (!confirmar) return;
 
     setBorrando(true);
+
+    // 1. Borramos sus dependencias primero para que Supabase no bloquee la acción
+    await supabase
+      .from("bitacoras_activas")
+      .delete()
+      .eq("discord_id", medico.discord_id);
+    await supabase
+      .from("bitacoras_historial")
+      .delete()
+      .eq("discord_id", medico.discord_id);
+
+    // 2. Ahora sí, borramos la ficha del médico
     const { error } = await supabase
       .from("miembros_same")
       .delete()
       .eq("discord_id", medico.discord_id);
+
     setBorrando(false);
 
     if (error) alert("Error al eliminar la ficha: " + error.message);
