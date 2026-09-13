@@ -105,34 +105,44 @@ export default function ModalPerfilMedico({
 
   const handleBorrar = async () => {
     const confirmar = window.confirm(
-      `¿Estás seguro de que deseas ELIMINAR permanentemente la ficha de ${medico.nombre_dni}? Se borrarán también todas sus horas registradas.`,
+      `¿Estás seguro de que deseas ELIMINAR permanentemente la ficha de ${medico.nombre_dni}?`,
     );
     if (!confirmar) return;
 
     setBorrando(true);
 
-    // 1. Borramos sus dependencias primero para que Supabase no bloquee la acción
-    await supabase
-      .from("bitacoras_activas")
-      .delete()
-      .eq("discord_id", medico.discord_id);
-    await supabase
-      .from("bitacoras_historial")
-      .delete()
-      .eq("discord_id", medico.discord_id);
+    try {
+      // 1. Limpiamos dependencias
+      await supabase
+        .from("bitacoras_activas")
+        .delete()
+        .eq("discord_id", medico.discord_id);
+      await supabase
+        .from("bitacoras_historial")
+        .delete()
+        .eq("discord_id", medico.discord_id);
 
-    // 2. Ahora sí, borramos la ficha del médico
-    const { error } = await supabase
-      .from("miembros_same")
-      .delete()
-      .eq("discord_id", medico.discord_id);
+      // 2. Borramos al médico y forzamos a que nos devuelva la fila borrada
+      const { data, error } = await supabase
+        .from("miembros_same")
+        .delete()
+        .eq("discord_id", medico.discord_id)
+        .select();
 
-    setBorrando(false);
-
-    if (error) alert("Error al eliminar la ficha: " + error.message);
-    else {
-      onRefresh();
-      onClose();
+      if (error) {
+        alert("Error de base de datos: " + error.message);
+      } else if (!data || data.length === 0) {
+        alert(
+          "❌ Error: Supabase bloqueó la acción. Ve a tu panel de Supabase > Authentication > Policies y asegúrate de que la tabla 'miembros_same' tenga habilitada una política (Policy) para permitir operaciones DELETE.",
+        );
+      } else {
+        onRefresh();
+        onClose();
+      }
+    } catch (err) {
+      alert("Error de conexión al intentar borrar.");
+    } finally {
+      setBorrando(false);
     }
   };
 

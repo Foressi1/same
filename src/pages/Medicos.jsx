@@ -107,17 +107,20 @@ export default function Medicos() {
   };
 
   // Lógica de filtrado dual (Texto + Estado)
+  // Lógica de filtrado dual (Texto + Estado)
   const medicosFiltrados = medicos.filter((med) => {
     // 1. Comprobar filtro de búsqueda de texto
     const termino = busqueda.toLowerCase();
     const nombre = (med.nombre_dni || "").toLowerCase();
     const dni = (med.dni || "").toLowerCase();
     const rango = (med.rango || "").toLowerCase();
+    const legajo = (med.legajo || "").toLowerCase(); // <-- Nuevo
 
     const coincideTexto =
       nombre.includes(termino) ||
       dni.includes(termino) ||
-      rango.includes(termino);
+      rango.includes(termino) ||
+      legajo.includes(termino);
 
     // 2. Comprobar filtro de estado
     let coincideEstado = true;
