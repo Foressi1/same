@@ -263,8 +263,15 @@ export default function Bitacoras() {
 
   // 2. Calcular exacto Inicio de Semana
   const inicioSemana = new Date(ahora);
-  inicioSemana.setHours(configCorte.hora, 0, 0, 0);
-  if (ahora.getDay() === jsDiaCorte && ahora.getHours() < configCorte.hora) {
+  inicioSemana.setHours(configCorte.hora, configCorte.minuto, 0, 0); // <-- Ahora suma los minutos
+
+  const esAntesDelCorte =
+    ahora.getDay() === jsDiaCorte &&
+    (ahora.getHours() < configCorte.hora ||
+      (ahora.getHours() === configCorte.hora &&
+        ahora.getMinutes() < configCorte.minuto));
+
+  if (esAntesDelCorte) {
     inicioSemana.setDate(inicioSemana.getDate() - 7);
   } else {
     while (inicioSemana.getDay() !== jsDiaCorte) {
@@ -278,7 +285,7 @@ export default function Bitacoras() {
     ahora.getMonth(),
     1,
     configCorte.hora,
-    0,
+    configCorte.minuto,
     0,
     0,
   );
