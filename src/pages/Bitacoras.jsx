@@ -23,6 +23,11 @@ export default function Bitacoras() {
   const [activas, setActivas] = useState([]);
   const [historial, setHistorial] = useState([]);
   const [miembros, setMiembros] = useState({});
+  const [configCorte, setConfigCorte] = useState({
+    dia: 0,
+    hora: 0,
+    minuto: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   // Filtros Avanzados
@@ -59,16 +64,33 @@ export default function Bitacoras() {
 
   const fetchBitacoras = async () => {
     setLoading(true);
-    const [resActivas, resHistorial, resMiembros] = await Promise.all([
-      supabase.from("bitacoras_activas").select("*"),
-      supabase
-        .from("bitacoras_historial")
-        .select("*")
-        .order("fin", { ascending: false }),
-      supabase
-        .from("miembros_same")
-        .select("discord_id, nombre_dni, avatar_url"),
-    ]);
+    const [resActivas, resHistorial, resMiembros, resConfig] =
+      await Promise.all([
+        supabase.from("bitacoras_activas").select("*"),
+        supabase
+          .from("bitacoras_historial")
+          .select("*")
+          .order("fin", { ascending: false }),
+        supabase
+          .from("miembros_same")
+          .select("discord_id, nombre_dni, avatar_url"),
+        supabase
+          .from("config_same")
+          .select("clave, valor")
+          .in("clave", ["corte_dia", "corte_hora", "corte_minuto"]),
+      ]);
+
+    if (resConfig.data) {
+      let d = 0,
+        h = 0,
+        m = 0;
+      resConfig.data.forEach((c) => {
+        if (c.clave === "corte_dia") d = parseInt(c.valor);
+        if (c.clave === "corte_hora") h = parseInt(c.valor);
+        if (c.clave === "corte_minuto") m = parseInt(c.valor);
+      });
+      setConfigCorte({ dia: d, hora: h, minuto: m });
+    }
 
     if (resMiembros.data) {
       const dictMiembros = {};
@@ -93,13 +115,13 @@ export default function Bitacoras() {
 
     if (!window.confirm(mensaje)) return;
 
+    let horasGuardadasTxt = "";
+
     if (guardarHoras) {
-      // 1. Calculamos el tiempo transcurrido
       const fechaInicio = new Date(activa.inicio);
       const ahora = new Date();
       const minutosTotales = (ahora.getTime() - fechaInicio.getTime()) / 60000;
 
-      // 2. Armamos el registro para el historial
       const nuevoRegistro = {
         discord_id: activa.discord_id,
         inicio: activa.inicio,
@@ -108,7 +130,6 @@ export default function Bitacoras() {
         tipo: "guardia",
       };
 
-      // 3. Guardamos en historial y luego borramos de activas
       const { data, error } = await supabase
         .from("bitacoras_historial")
         .insert([nuevoRegistro])
@@ -122,10 +143,10 @@ export default function Bitacoras() {
         setActivas((prev) =>
           prev.filter((a) => a.discord_id !== activa.discord_id),
         );
-        setHistorial((prev) => [data[0], ...prev]); // Actualizamos la tabla visualmente al instante
+        setHistorial((prev) => [data[0], ...prev]);
+        horasGuardadasTxt = `Se guardaron **${formatTiempo(minutosTotales)}** en su historial.`;
       }
     } else {
-      // Comportamiento original: solo borramos de activas
       await supabase
         .from("bitacoras_activas")
         .delete()
@@ -133,6 +154,54 @@ export default function Bitacoras() {
       setActivas((prev) =>
         prev.filter((a) => a.discord_id !== activa.discord_id),
       );
+      horasGuardadasTxt = `⚠️ **Se descartaron todas las horas acumuladas en esta sesión.**`;
+    }
+
+    // WEBHOOK DISCORD
+    const { data: configData } = await supabase
+      .from("config_same")
+      .select("valor")
+      .eq("clave", "webhook_bitacoras")
+      .single();
+    if (configData && configData.valor) {
+      const payload = {
+        content: `<@${activa.discord_id}>`,
+        embeds: [
+          {
+            title: `🔒 BITÁCORA CERRADA POR JEFATURA`,
+            description: `El turno de **${nombre}** fue cerrado forzosamente desde el Dashboard Web.`,
+            color: guardarHoras ? 3066993 : 15158332,
+            fields: [
+              {
+                name: "Médico",
+                value: `<@${activa.discord_id}>`,
+                inline: true,
+              },
+              {
+                name: "Cerrada por",
+                value: `<@${dbUser.discord_id}> (${dbUser.nombre_dni})`,
+                inline: true,
+              },
+              {
+                name: "Resultado de Horas",
+                value: horasGuardadasTxt,
+                inline: false,
+              },
+            ],
+            footer: { text: "SAME Zona Sur - Dashboard Web" },
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      };
+      try {
+        await fetch(configData.valor, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      } catch (err) {
+        console.error("Error Webhook:", err);
+      }
     }
   };
 
@@ -149,7 +218,6 @@ export default function Bitacoras() {
     const minutos = parseInt(ajuste.minutos) || 0;
     let totalMinutos = horas * 60 + minutos;
     if (totalMinutos <= 0) return alert("Ingresa un tiempo válido.");
-
     if (ajuste.tipo === "resta") totalMinutos = -totalMinutos;
 
     const ahoraIso = new Date().toISOString();
@@ -174,7 +242,6 @@ export default function Bitacoras() {
   const handleGuardarEdicion = async (id) => {
     if (edicion.minutos_totales === "") return;
     const nuevosMinutos = parseFloat(edicion.minutos_totales);
-
     const { error } = await supabase
       .from("bitacoras_historial")
       .update({ minutos: nuevosMinutos })
@@ -187,22 +254,44 @@ export default function Bitacoras() {
     }
   };
 
-  // --- FILTRADO MULTI-NIVEL ---
+  // --- LÓGICA TEMPORAL SINCRONIZADA CON DISCORD ---
   const ahora = new Date();
 
-  // 1. Nivel Base (Por rol o por selección del jefe)
+  // 1. Traductor de Días (Python Lunes=0 -> JS Lunes=1)
+  const mapPythonToJS = { 0: 1, 1: 2, 2: 3, 3: 4, 4: 5, 5: 6, 6: 0 };
+  const jsDiaCorte = mapPythonToJS[configCorte.dia] ?? 1;
+
+  // 2. Calcular exacto Inicio de Semana
+  const inicioSemana = new Date(ahora);
+  inicioSemana.setHours(configCorte.hora, 0, 0, 0);
+  if (ahora.getDay() === jsDiaCorte && ahora.getHours() < configCorte.hora) {
+    inicioSemana.setDate(inicioSemana.getDate() - 7);
+  } else {
+    while (inicioSemana.getDay() !== jsDiaCorte) {
+      inicioSemana.setDate(inicioSemana.getDate() - 1);
+    }
+  }
+
+  // 3. Calcular exacto Inicio de Mes
+  const inicioMes = new Date(
+    ahora.getFullYear(),
+    ahora.getMonth(),
+    1,
+    configCorte.hora,
+    0,
+    0,
+    0,
+  );
+  if (ahora < inicioMes) {
+    inicioMes.setMonth(inicioMes.getMonth() - 1);
+  }
+
   const baseFiltrada = esJefe
     ? medicoSeleccionado
       ? historial.filter((r) => r.discord_id === medicoSeleccionado)
       : historial
     : historial.filter((reg) => reg.discord_id === dbUser.discord_id);
 
-  // 2. Nivel Temporal para Estadísticas
-  const inicioSemana = new Date(ahora);
-  inicioSemana.setDate(
-    ahora.getDate() - (ahora.getDay() === 0 ? 6 : ahora.getDay() - 1),
-  );
-  inicioSemana.setHours(0, 0, 0, 0);
   let minSemana = 0;
   let minMes = 0;
   let minTotal = 0;
@@ -211,14 +300,9 @@ export default function Bitacoras() {
     const fechaFin = new Date(reg.fin);
     minTotal += Number(reg.minutos);
     if (fechaFin >= inicioSemana) minSemana += Number(reg.minutos);
-    if (
-      fechaFin.getMonth() === ahora.getMonth() &&
-      fechaFin.getFullYear() === ahora.getFullYear()
-    )
-      minMes += Number(reg.minutos);
+    if (fechaFin >= inicioMes) minMes += Number(reg.minutos);
   });
 
-  // 3. Nivel Visual para la Tabla
   const historialFiltrado = baseFiltrada.filter((reg) => {
     const fecha = new Date(reg.fin);
     const medico = miembros[reg.discord_id];
@@ -230,9 +314,7 @@ export default function Bitacoras() {
     if (filtroPeriodo === "semana") {
       coincideFecha = fecha >= inicioSemana;
     } else if (filtroPeriodo === "mes") {
-      coincideFecha =
-        fecha.getMonth() === ahora.getMonth() &&
-        fecha.getFullYear() === ahora.getFullYear();
+      coincideFecha = fecha >= inicioMes;
     } else if (filtroPeriodo === "personalizado") {
       if (fechaDesde)
         coincideFecha =
@@ -254,13 +336,11 @@ export default function Bitacoras() {
 
   return (
     <div className="animate-fade-in max-w-7xl mx-auto space-y-6 pb-10">
-      {/* CABECERA */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <h1 className="text-3xl font-bold flex items-center gap-3">
           <Activity className="text-primary" size={32} />
           {esJefe ? "Auditoría de Bitácoras" : "Ficha Operativa"}
         </h1>
-
         {esJefe && (
           <div className="bg-surface border border-zinc-800 p-2 rounded-xl flex items-center gap-3">
             <span className="text-sm font-bold text-zinc-400 pl-2">
@@ -282,7 +362,6 @@ export default function Bitacoras() {
         )}
       </div>
 
-      {/* TARJETAS ESTADÍSTICAS (Dinámicas según selección) */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div className="bg-surface border border-zinc-800 p-5 rounded-2xl flex items-center gap-4 shadow-lg">
           <div className="bg-primary/20 p-3 rounded-xl text-primary">
@@ -325,7 +404,6 @@ export default function Bitacoras() {
         </div>
       </div>
 
-      {/* PANEL DE GESTIÓN RÁPIDA (Solo Jefatura + Médico Seleccionado) */}
       {esJefe && medicoSeleccionado && (
         <div className="bg-zinc-900/50 border border-zinc-800 p-5 rounded-2xl shadow-lg flex flex-col md:flex-row items-center gap-6 animate-fade-in mb-6">
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -349,7 +427,6 @@ export default function Bitacoras() {
               </p>
             </div>
           </div>
-
           <form
             onSubmit={handleAplicarAjuste}
             className="flex flex-wrap items-center gap-3 w-full md:flex-1"
@@ -380,7 +457,6 @@ export default function Bitacoras() {
               }
               className="bg-background border border-zinc-700 rounded-lg w-24 px-3 py-2 text-sm text-center text-white focus:border-primary"
             />
-
             <button
               type="submit"
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-transform active:scale-95 ${ajuste.tipo === "suma" ? "bg-primary text-black hover:bg-yellow-400" : "bg-red-500 text-white hover:bg-red-600"}`}
@@ -390,14 +466,13 @@ export default function Bitacoras() {
               ) : (
                 <MinusCircle size={16} />
               )}
-              Aplicar Ajuste
+              Aplicar
             </button>
           </form>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* PANEL IZQUIERDO: ACTIVOS */}
         <div className="lg:col-span-1 space-y-4">
           <div className="bg-surface border border-zinc-800 rounded-2xl p-5 shadow-lg">
             <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
@@ -456,7 +531,7 @@ export default function Bitacoras() {
                               )
                             }
                             className="p-1.5 text-zinc-500 hover:bg-green-500/20 hover:text-green-400 rounded-lg transition-colors"
-                            title="Cerrar y GUARDAR horas"
+                            title="Cerrar y GUARDAR"
                           >
                             <Save size={18} />
                           </button>
@@ -469,7 +544,7 @@ export default function Bitacoras() {
                               )
                             }
                             className="p-1.5 text-zinc-500 hover:bg-red-500/20 hover:text-red-400 rounded-lg transition-colors"
-                            title="Cerrar y BORRAR horas"
+                            title="Cerrar y BORRAR"
                           >
                             <XCircle size={18} />
                           </button>
@@ -483,7 +558,6 @@ export default function Bitacoras() {
           </div>
         </div>
 
-        {/* PANEL DERECHO: HISTORIAL DETALLADO */}
         <div className="lg:col-span-3 bg-surface border border-zinc-800 rounded-2xl shadow-lg flex flex-col overflow-hidden">
           <div className="p-5 border-b border-zinc-800 bg-zinc-900/30 flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
@@ -491,7 +565,6 @@ export default function Bitacoras() {
                 <History className="text-primary" size={20} /> Historial
                 Operativo
               </h2>
-
               <div className="flex flex-wrap gap-3 w-full sm:w-auto">
                 {esJefe && !medicoSeleccionado && (
                   <div className="relative flex-1 sm:w-48">
@@ -520,7 +593,6 @@ export default function Bitacoras() {
                 </select>
               </div>
             </div>
-
             {filtroPeriodo === "personalizado" && (
               <div className="flex gap-4 items-center bg-zinc-900 p-3 rounded-lg border border-zinc-800 animate-fade-in">
                 <div className="flex flex-col">
@@ -544,7 +616,6 @@ export default function Bitacoras() {
               </div>
             )}
           </div>
-
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-left text-sm relative">
               <thead className="bg-zinc-900/90 text-zinc-400 text-xs uppercase font-bold sticky top-0 backdrop-blur-sm z-10">
@@ -574,7 +645,6 @@ export default function Bitacoras() {
                     const fInicio = new Date(reg.inicio);
                     const fFin = new Date(reg.fin);
                     const isEditing = edicion.id === reg.id;
-
                     return (
                       <tr
                         key={reg.id}
